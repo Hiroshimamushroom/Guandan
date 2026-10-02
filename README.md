@@ -6,7 +6,7 @@
 <p align="center">  
   <b>零安装 · 零联网 · 零依赖 · 单文件运行</b>  
   
-  <sub>https://hiroshimamushroom.github.io/Guandan/</sub>  
+  <sub>链接→→→https://hiroshimamushroom.github.io/Guandan/</sub>  
 </p>
 
 ---
