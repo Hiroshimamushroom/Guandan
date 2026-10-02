@@ -1330,7 +1330,7 @@ function quoteBubble(p,text){
   b.style.top=(above?(r.top-10-h/2):(r.bottom+10+h/2))+"px";
   // 箭头对准头像中心(气泡因防出屏偏移时,箭头跟着头像走)
   b.style.setProperty("--ax",Math.max(10,Math.min(idealCx-(cx-w/2),w-10))+"px");
-  setTimeout(()=>b.remove(),4500);
+  setTimeout(()=>b.remove(),9000);
 }
 function startQuoteLoop(){
   if(quoteTimer)return;
