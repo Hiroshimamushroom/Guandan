@@ -6,7 +6,7 @@
 <p align="center">  
   <b>零安装 · 零联网 · 零依赖 · 单文件运行</b>  
   
-  <sub>Chrome / Edge 直接打开 · 全局微软雅黑 · 支持语音播报</sub>  
+  <sub>https://hiroshimamushroom.github.io/Guandan/</sub>  
 </p>
 
 ---
