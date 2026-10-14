@@ -65,13 +65,18 @@ body{
 .mc-col{display:flex;flex-direction:column-reverse;flex:none}
 .mc-col .mini-card{margin-top:-13px}
 .mc-col .mini-card:first-child{margin-top:0}
-.mini-card{width:28px;height:38px;background:#faf8f2;border-radius:4px;display:flex;flex-direction:column;
+.mini-card{position:relative;width:28px;height:38px;background:#faf8f2;border-radius:4px;display:flex;flex-direction:column;
   align-items:center;justify-content:center;font-size:12px;font-weight:700;line-height:1.05;flex:none;
   box-shadow:0 1px 3px rgba(0,0,0,.4),inset 0 0 0 1px rgba(0,0,0,.12)}
 .mini-card.sS{color:#111}.mini-card.sC{color:#1e7d32;font-weight:900}
 .mini-card.sH{color:#d32f2f}.mini-card.sD{color:#e08c00}
 .mini-card.jR{color:#b71c1c;font-size:10px}.mini-card.jB{color:#111;font-size:10px}
 .mini-card.lv{box-shadow:0 0 0 2px #c9a86a,0 1px 3px rgba(0,0,0,.4)}
+/* 观战明牌中的逢人配:红圈+角落「配」小章 */
+.mini-card.wt{box-shadow:0 0 0 2px #ff4d4d,0 1px 3px rgba(0,0,0,.4);z-index:3}
+.mini-card.wt::after{content:"配";position:absolute;top:-5px;right:-5px;width:14px;height:14px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#ff8a80,#c62828);color:#fff;font-size:9px;font-weight:900;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(0,0,0,.5);z-index:4}
 /* ---------- 中央出牌区 ---------- */
 .slot{position:absolute;min-width:190px;min-height:104px;border:1.5px dashed rgba(201,168,106,.35);
   border-radius:12px;transform:translate(-50%,-50%);z-index:10;transition:box-shadow .3s,border-color .3s;
@@ -105,10 +110,11 @@ body{
 .card.lvl::after{content:"级";position:absolute;top:-7px;right:-7px;width:19px;height:19px;border-radius:50%;
   background:radial-gradient(circle at 35% 30%,#ffe9ad,#c9a86a);color:#3a2c10;font-size:11px;font-weight:900;
   display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.6)}
-.card.wild{box-shadow:0 0 0 2px #ff4d4d,0 0 12px rgba(255,60,60,.65),0 2px 6px rgba(0,0,0,.5)}
-.card.wild::before{content:"配";position:absolute;bottom:-7px;right:-7px;width:19px;height:19px;border-radius:50%;
+/* 逢人配(红桃级牌):红圈+红内框+顶部「配」章 —— 记号置于顶部,理牌叠牌遮挡下依旧可见 */
+.card.wild{box-shadow:0 0 0 2px #ff4d4d,0 0 12px rgba(255,60,60,.65),0 2px 6px rgba(0,0,0,.5),inset 0 0 0 2px rgba(255,77,77,.7)}
+.card.wild::before{content:"配";position:absolute;top:-9px;left:50%;transform:translateX(-50%);width:19px;height:19px;border-radius:50%;
   background:radial-gradient(circle at 35% 30%,#ff8a80,#c62828);color:#fff;font-size:11px;font-weight:900;
-  display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.6);z-index:2}
+  display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.6);z-index:3}
 #hand .card{cursor:pointer}
 #hand .card:hover{transform:translateY(-6px)}
 #hand .card.sel{transform:translateY(-16px);box-shadow:0 0 0 2.5px #ffd97a,0 6px 14px rgba(0,0,0,.55)}
@@ -149,6 +155,7 @@ body{
 #counter .cc-card.jR{color:#b71c1c;font-size:9px;letter-spacing:0}
 #counter .cc-card.jB{color:#111;font-size:9px;letter-spacing:0}
 #counter .cc-card.lv{box-shadow:0 0 0 1.5px #ffd97a,inset 0 0 0 1px rgba(0,0,0,.15)}
+#counter .cc-card.wtc{color:#d32f2f;box-shadow:0 0 0 1.5px #ff4d4d,inset 0 0 0 1px rgba(0,0,0,.15)}
 #counter .cc.dead .cc-card{filter:grayscale(1) brightness(.75)}
 #counter .cc.dead b{color:#888}
 #ctr-ctl{margin-top:5px;font-size:12px}
@@ -312,13 +319,28 @@ const TYPE_CN={[T.SINGLE]:"单张",[T.PAIR]:"对子",[T.TRIPLE]:"三张",[T.FULL
   [T.PAIRS3]:"三连对",[T.PLATE]:"钢板",[T.BOMB]:"炸弹",[T.FLUSH]:"同花顺",[T.JOKERBOMB]:"天王炸"};
 const T_NAME={1:"单张",2:"对子",3:"三张",4:"三带二",5:"顺子",6:"三连对",7:"钢板",8:"炸弹",9:"同花顺",10:"天王炸"};
 const AI_NAME_POOL=["牌痴阿May","老K","苏北刀客","夜风","阿庆","牌桌诸葛亮","小诸葛","冷静de鱼","铁手","笑面虎","河豚君","算盘精"];
-/* 合法顺子序列(自然点数,A可高可低,2仅允许A2345) */
+/* 合法序列(自然点数;A可高可低;2可参与最小档:顺子23456、三连对AA2233、钢板AAA222)
+   序列一律升序存放,A低序列把A(14)放在首位,末元素即该序列的比大小主值 */
 const STRAIGHT_SEQS=(()=>{
   const seqs=[];
-  for(let s=3;s<=10;s++)seqs.push([s,s+1,s+2,s+3,s+4]);       // 3..10 起头 → 最高 10,J,Q,K,A
-  seqs.push([14,2,3,4,5]);                                      // A 低
+  for(let s=2;s<=10;s++)seqs.push([s,s+1,s+2,s+3,s+4]);       // 23456 .. 10,J,Q,K,A
+  seqs.push([14,2,3,4,5]);                                      // A 低(A2345,最小顺子)
   return seqs;
 })();
+const PAIRS3_SEQS=(()=>{
+  const seqs=[];
+  for(let s=2;s<=12;s++)seqs.push([s,s+1,s+2]);                 // 223344 .. QQKKAA
+  seqs.push([14,2,3]);                                          // AA2233(最小三连对)
+  return seqs;
+})();
+const PLATE_SEQS=(()=>{
+  const seqs=[];
+  for(let s=2;s<=13;s++)seqs.push([s,s+1]);                     // 222333 .. KKKAAA
+  seqs.push([14,2]);                                            // AAA222(最小钢板)
+  return seqs;
+})();
+/* 序列比大小主值(A低序列的A在首位,末元素即最大自然点数) */
+const seqMain=seq=>seq[seq.length-1];
 /* ===================== 牌模型与规则 ===================== */
 let __cid=0;
 function mkCard(suit,rank){return {id:++__cid,suit,rank}}
@@ -358,21 +380,19 @@ function evalStruct(ranks,lv){
     const sorted=[...ranks].sort((a,b)=>a-b);
     for(const seq of STRAIGHT_SEQS){
       if(seq.length===sorted.length&&seq.every(v=>sorted.includes(v))){
-        out.push({type:T.STRAIGHT,main:seq[0]===14?5:seq[4],len:5});break;
+        out.push({type:T.STRAIGHT,main:seqMain(seq),len:5});break;
       }
     }
     return out;
   }
   if(n===6){
-    // 三连对:三对且连续
+    // 三连对:三对且为合法连对序列(含A低AA2233)
     if(ks.length===3&&ks.every(k=>cnt[k]===2)){
-      const s=ks.sort((a,b)=>a-b);
-      if(s[1]===s[0]+1&&s[2]===s[1]+1)out.push({type:T.PAIRS3,main:s[2],len:6});
+      for(const seq of PAIRS3_SEQS){if(seq.every(v=>ks.includes(v))){out.push({type:T.PAIRS3,main:seqMain(seq),len:6});break}}
     }
-    // 钢板:两个连续三张
+    // 钢板:两个连续三张(含A低AAA222)
     if(ks.length===2&&ks.every(k=>cnt[k]===3)){
-      const s=ks.sort((a,b)=>a-b);
-      if(s[1]===s[0]+1)out.push({type:T.PLATE,main:s[1],len:6});
+      for(const seq of PLATE_SEQS){if(seq.every(v=>ks.includes(v))){out.push({type:T.PLATE,main:seqMain(seq),len:6});break}}
     }
     return out;
   }
@@ -391,7 +411,7 @@ function detectFlush(normals,wildCount,lv){
     if(new Set(rs).size!==rs.length)continue;       // 同花点数不可重复
     for(const seq of STRAIGHT_SEQS){
       if(rs.every(r=>seq.includes(r))&&seq.length-rs.length===wildCount){
-        const main=seq[0]===14?5:seq[4];
+        const main=seqMain(seq);
         if(!best||main>best.main)best={type:T.FLUSH,main,len:5}; // 遍历所有可匹配seq取main最大
       }
     }
@@ -517,13 +537,13 @@ function groupHand(cards,lv){
   // 5) 三连对/钢板
   for(;;){
     const cnt=rankCounts(normals());let found=null;
-    for(let a=2;a<=12;a++)if(cnt[a]>=2&&cnt[a+1]>=2&&cnt[a+2]>=2){found=[a,a+1,a+2];break}
+    for(const seq of PAIRS3_SEQS)if(seq.every(r=>cnt[r]>=2)){found=seq;break}
     if(!found)break;
     const cs=[];found.forEach(r=>cs.push(...normals().filter(c=>c.rank===r).slice(0,2)));take(cs);
   }
   for(;;){
     const cnt=rankCounts(normals());let found=null;
-    for(let a=2;a<=13;a++)if(cnt[a]>=3&&cnt[a+1]>=3){found=[a,a+1];break}
+    for(const seq of PLATE_SEQS)if(seq.every(r=>cnt[r]>=3)){found=seq;break}
     if(!found)break;
     const cs=[];found.forEach(r=>cs.push(...normals().filter(c=>c.rank===r).slice(0,3)));take(cs);
   }
@@ -593,17 +613,17 @@ function genBeats(cards,prev,lv){
   }
   else if(t===T.STRAIGHT){
     for(const seq of STRAIGHT_SEQS){
-      const top=seq[0]===14?5:seq[4];if(top<=prev.main)continue;
+      const top=seqMain(seq);if(top<=prev.main)continue;
       const cs=[];let w=0,ok=true;
       for(const r of seq){if(byRank[r]&&byRank[r].length)cs.push(byRank[r][0]);else if(w<wilds.length){cs.push(wilds[w++])}else{ok=false;break}}
       if(ok&&cs.length===5)push(cs);
     }
   }
   else if(t===T.PAIRS3){
-    for(let a=2;a<=12;a++){
-      if(a+2<=prev.main)continue;
+    for(const seq of PAIRS3_SEQS){
+      const top=seqMain(seq);if(top<=prev.main)continue;
       const cs=[];let ok=true,used=0;
-      for(const r of[a,a+1,a+2]){
+      for(const r of seq){
         const have=byRank[r]?byRank[r].slice(0,2):[];
         cs.push(...have);
         const need=2-have.length;
@@ -614,10 +634,10 @@ function genBeats(cards,prev,lv){
     }
   }
   else if(t===T.PLATE){
-    for(let a=2;a<=13;a++){
-      if(a+1<=prev.main)continue;
+    for(const seq of PLATE_SEQS){
+      const top=seqMain(seq);if(top<=prev.main)continue;
       const cs=[];let ok=true,used=0;
-      for(const r of[a,a+1]){
+      for(const r of seq){
         const have=byRank[r]?byRank[r].slice(0,3):[];
         cs.push(...have);
         const need=3-have.length;
@@ -1346,7 +1366,7 @@ function startQuoteLoop(){
 }
 function miniCardHtml(c,lv){
   if(c.suit==="J")return `<div class="mini-card ${c.rank===16?"jR":"jB"}">${c.rank===16?"大王":"小王"}</div>`;
-  return `<div class="mini-card s${c.suit}${c.rank===lv?" lv":""}">${RANK_CH[c.rank]}<span>${SUIT_CH[c.suit]}</span></div>`;
+  return `<div class="mini-card s${c.suit}${c.rank===lv?" lv":""}${isWild(c,lv)?" wt":""}">${RANK_CH[c.rank]}<span>${SUIT_CH[c.suit]}</span></div>`;
 }
 function openHandHtml(p){
   const lv=G.level;
@@ -1396,6 +1416,9 @@ function updateCounter(){
     const mine=G.hands[0].filter(c=>c.rank===r).length;
     cell(RANK_CH[r],8-played-mine,"sS"+(r===G.level?" lv":""));
   }
+  // 逢人配(红桃级牌)单独计数:场上剩余 = 2 - 已出 - 自己手牌
+  const pW=G.playedCards.filter(c=>isWild(c,G.level)).length,mW=G.hands[0].filter(c=>isWild(c,G.level)).length;
+  cell("配",2-pW-mW,"wtc");
   const p15=G.playedCards.filter(c=>c.rank===15).length,m15=G.hands[0].filter(c=>c.rank===15).length;
   cell("小王",2-p15-m15,"jB");
   const p16=G.playedCards.filter(c=>c.rank===16).length,m16=G.hands[0].filter(c=>c.rank===16).length;
@@ -1766,6 +1789,19 @@ function selfTest(){
   ok("A低顺子(A2345)",p&&p.type===T.STRAIGHT&&p.main===5);
   p=identify([C("S",10),C("H",11),C("D",12),C("C",13),C("S",14)],lv);
   ok("A高顺子(10JQKA)",p&&p.type===T.STRAIGHT&&p.main===14);
+  p=identify([C("S",2),C("H",3),C("D",4),C("C",5),C("S",6)],lv);
+  ok("小顺子(23456)",p&&p.type===T.STRAIGHT&&p.main===6);
+  p=identify([C("S",2),C("D",3),C("C",4),C("S",5),C("C",6)],3);
+  ok("级牌3组23456(级牌按自然点参与)",p&&p.type===T.STRAIGHT&&p.main===6);
+  p=identify([C("S",2),C("D",4),C("C",5),C("S",6),C("H",3)],3);
+  ok("级牌3逢人配补23456",p&&p.type===T.STRAIGHT&&p.main===6);
+  const sLow=identify([C("S",14),C("H",2),C("D",3),C("C",4),C("S",5)],lv);
+  const sUp=identify([C("S",2),C("H",3),C("D",4),C("C",5),C("S",6)],lv);
+  ok("23456>A2345",canBeat(sUp,sLow)&&!canBeat(sLow,sUp));
+  p=identify([C("S",14),C("H",14),C("D",2),C("C",2),C("S",3),C("H",3)],lv);
+  ok("三连对AA2233(最小)",p&&p.type===T.PAIRS3&&p.main===3);
+  p=identify([C("S",14),C("H",14),C("D",14),C("C",2),C("S",2),C("H",2)],lv);
+  ok("钢板AAA222(最小)",p&&p.type===T.PLATE&&p.main===2);
   p=identify([C("S",3),C("H",3),C("D",4),C("C",4),C("S",5),C("H",5)],lv);
   ok("三连对识别",p&&p.type===T.PAIRS3&&p.main===5);
   p=identify([C("S",3),C("H",3),C("D",3),C("C",4),C("S",4),C("H",4)],lv);
