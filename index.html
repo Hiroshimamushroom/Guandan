@@ -50,8 +50,28 @@ body{
   50%{box-shadow:0 0 0 12px rgba(63,217,208,0),0 2px 8px rgba(0,0,0,.5)}
 }
 .pinfo.out .avatar{filter:grayscale(.6) brightness(.7)}
-.pinfo .rank-tag{position:absolute;top:-8px;right:-10px;background:#c9a86a;color:#1a2f26;font-size:11px;
-  font-weight:700;border-radius:8px;padding:1px 6px;box-shadow:0 1px 4px #000}
+/* ---------- 名次徽标:头游/二游/三游 高亮显示在头像右上角 ---------- */
+.pinfo .avatar-wrap{position:relative;flex:none;display:flex}
+.pinfo .rank-tag{position:absolute;top:-9px;right:-13px;z-index:3;white-space:nowrap;
+  font-size:12px;font-weight:900;letter-spacing:1px;border-radius:10px;padding:2px 7px;
+  box-shadow:0 1px 4px rgba(0,0,0,.65)}
+.pinfo .rank-tag.r1{background:linear-gradient(160deg,#fff3c4,#e0a52e);color:#3a2c10;
+  box-shadow:0 0 12px rgba(255,205,90,.95),0 1px 4px rgba(0,0,0,.65)}
+.pinfo .rank-tag.r2{background:linear-gradient(160deg,#eaf5ff,#9fc2dd);color:#18324a;
+  box-shadow:0 0 10px rgba(175,215,250,.85),0 1px 4px rgba(0,0,0,.65)}
+.pinfo .rank-tag.r3{background:linear-gradient(160deg,#ffe3c8,#c98a5a);color:#3d2410;
+  box-shadow:0 0 9px rgba(225,165,110,.8),0 1px 4px rgba(0,0,0,.65)}
+.pinfo .rank-tag.r4{background:linear-gradient(160deg,#9fb2a8,#5c7268);color:#101f19;
+  box-shadow:0 1px 4px rgba(0,0,0,.65)}
+.pinfo .rank-tag.new{animation:rankPop .55s cubic-bezier(.2,1.6,.4,1)}
+@keyframes rankPop{0%{transform:scale(.25);opacity:0}60%{transform:scale(1.3);opacity:1}100%{transform:scale(1)}}
+/* 头游金环/二游银环/三游铜环(伪元素不受头像变暗滤镜影响) */
+.pinfo.rank1 .avatar-wrap::after{content:"";position:absolute;inset:-3px;border-radius:50%;pointer-events:none;
+  box-shadow:0 0 16px rgba(255,217,122,.9),inset 0 0 0 3px #ffd97a}
+.pinfo.rank2 .avatar-wrap::after{content:"";position:absolute;inset:-3px;border-radius:50%;pointer-events:none;
+  box-shadow:0 0 12px rgba(175,215,250,.75),inset 0 0 0 3px #bcd8ee}
+.pinfo.rank3 .avatar-wrap::after{content:"";position:absolute;inset:-3px;border-radius:50%;pointer-events:none;
+  box-shadow:0 0 10px rgba(220,170,120,.65),inset 0 0 0 3px #d8a878}
 #pinfo0{left:22px;bottom:238px}
 #pinfo1{right:22px;top:44%;transform:translateY(-50%);flex-direction:column;text-align:center}
 #pinfo2{left:50%;top:14px;transform:translateX(-50%)}
@@ -121,6 +141,8 @@ body{
 #hand .card.sel:hover{transform:translateY(-16px)}
 #hand .card.pickable{box-shadow:0 0 0 2.5px #4caf50,0 0 14px rgba(76,175,80,.55);cursor:pointer}
 #hand .card.dim{opacity:.4}
+/* 还贡选中的牌:金环抬起,盖过候选绿环 */
+#hand .card.sel.pickable{box-shadow:0 0 0 3px #ffd97a,0 0 16px rgba(255,217,122,.7)}
 .card.ghost{opacity:.35}
 /* ---------- 手牌区 ---------- */
 #handwrap{position:absolute;left:0;right:0;bottom:0;height:300px;z-index:40;pointer-events:none}
@@ -267,6 +289,7 @@ body{
       <button class="btn" id="btn-pass">不要</button>
       <button class="btn" id="btn-group">整理</button>
       <button class="btn gold" id="btn-play">出牌</button>
+      <button class="btn gold" id="btn-return" style="display:none">确认还贡</button>
     </div>
     <div id="hand"></div>
     <div id="btns-low">
@@ -481,13 +504,13 @@ function canBeat(a,b){
   if(a.type!==b.type||a.len!==b.len)return false;
   return a.main>b.main;
 }
-/* ---- 在一组牌中找同花顺(可含配),返回{cards,play}或null ---- */
-function findFlushIn(cards,lv){
+/* ---- 在一组牌中找同花顺候选(可含配),返回全部可行候选 ---- */
+function findFlushAll(cards,lv){
   const wilds=cards.filter(c=>isWild(c,lv));
   const normals=cards.filter(c=>!isJoker(c)&&!isWild(c,lv));
   const bySuit={};
   for(const c of normals)(bySuit[c.suit]=bySuit[c.suit]||[]).push(c);
-  let best=null;
+  const out=[];
   for(const s of SUIT_LIST){
     const cs=bySuit[s]||[];
     const byRank={};cs.forEach(c=>{if(!byRank[c.rank])byRank[c.rank]=c}); // 同点取一张
@@ -497,10 +520,21 @@ function findFlushIn(cards,lv){
       if(miss.length<=wilds.length&&have.length+miss.length===5&&have.length>=3){
         const pick=[...have,...wilds.slice(0,miss.length)];
         const play=identify(pick,lv);
-        if(play&&play.type===T.FLUSH&&(!best||play.main>best.play.main))best={cards:pick,play};
+        if(play&&play.type===T.FLUSH)out.push({cards:pick,play,wildUse:miss.length});
       }
     }
   }
+  return out;
+}
+/* ---- 取最优同花顺;preferNatural=分组时优先纯天然(保留配),否则取主值最大 ---- */
+function findFlushIn(cards,lv,preferNatural){
+  const all=findFlushAll(cards,lv);
+  let best=null;
+  for(const c of all){
+    if(preferNatural&&c.wildUse>0)continue;
+    if(!best||c.play.main>best.play.main)best=c;
+  }
+  if(!best&&preferNatural)return findFlushIn(cards,lv,false);
   return best;
 }
 /* ===================== 理牌分组 / 压牌候选 ===================== */
@@ -514,8 +548,8 @@ function groupHand(cards,lv){
   // 1) 天王炸
   const jk=pool.filter(isJoker);
   if(jk.length===4)take(jk);
-  // 2) 逢人配组同花顺(优先,替代散牌手数不增)
-  const fs=findFlushIn(pool,lv);
+  // 2) 逢人配组同花顺(天然同花优先:不额外消耗配;替代散牌手数不增)
+  const fs=findFlushIn(pool,lv,true);
   if(fs)take(fs.cards);
   // 3) 炸弹:天然≥4;3张+1配升级为4炸(不增手数)
   for(;;){
@@ -569,6 +603,75 @@ function groupHand(cards,lv){
   while(pool.length)take([pool[0]]);
   return groups;
 }
+/* ===================== 逢人配方案规划 =====================
+   枚举"配"的点数归属(模拟其替身牌),对每种归属做贪心分组并打分,
+   在"基础方案(配当配用)"与全部替身方案中取最优。
+   虚拟牌只用于分组计算;返回的分组一律映射回真实手牌,可直接出牌。 */
+const _planCache=new Map();
+function planCands(cards,lv,cap){
+  const cnt={};
+  for(const c of cards)if(!isJoker(c))cnt[c.rank]=(cnt[c.rank]||0)+1;
+  const out=[],seen=new Set();
+  const add=r=>{if(r>=2&&r<=14&&!seen.has(r)){seen.add(r);out.push(r)}};
+  add(lv);add(14);
+  const has=(r,n)=>(cnt[r]||0)>=n;
+  // 序列缺口优先:配去补最接近成型的顺子/三连对/钢板缺口
+  for(const seq of STRAIGHT_SEQS){const miss=seq.filter(r=>!has(r,1));if(miss.length===1&&seq.filter(r=>has(r,1)).length===4)add(miss[0])}
+  for(const seq of PAIRS3_SEQS){const miss=seq.filter(r=>!has(r,2));if(miss.length===1&&seq.filter(r=>has(r,2)).length===2)add(miss[0])}
+  for(const seq of PLATE_SEQS){const miss=seq.filter(r=>!has(r,3));if(miss.length===1&&seq.filter(r=>has(r,3)).length===1)add(miss[0])}
+  const rs=Object.keys(cnt).map(Number).sort((a,b)=>cnt[b]-cnt[a]||b-a);
+  for(const r of rs){add(r);add(r-1);add(r+1)}
+  return out.slice(0,cap||13);
+}
+/* 分组方案打分:炸弹重赏,级牌/大牌保值,手数越少越好 */
+function scoreGroups(groups){
+  let s=0;
+  for(const g of groups){
+    const p=g.play;if(!p){s-=3;continue}
+    const bw=bombWeight(p);
+    if(bw)s+=bw*2;
+    else if(p.main>=50)s+=0.8;
+    else if(p.main>=14)s+=0.4;
+    else if(p.main>=12)s+=0.2;
+    s-=1.2;
+  }
+  return s;
+}
+function planHand(cards,lv,mode){
+  const fast=mode==="fast";
+  const key=(fast?"F":"N")+lv+"|"+cards.map(c=>c.id).sort((a,b)=>a-b).join(",");
+  const hit=_planCache.get(key);if(hit)return hit;
+  const wilds=cards.filter(c=>isWild(c,lv));
+  let best=null;
+  const base=groupHand(cards,lv);
+  if(base.every(g=>g.play))best={groups:base,score:scoreGroups(base)+0.3*wilds.length}; // 同分倾向保留配的灵活性
+  if(wilds.length){
+    const cands=planCands(cards,lv,fast?5:13);
+    const combos=[];
+    if(wilds.length===1){for(const r of cands)combos.push([r])}
+    else{for(let i=0;i<cands.length;i++)for(let j=i;j<cands.length;j++)combos.push([cands[i],cands[j]])}
+    for(const combo of combos){
+      const virt=cards.map(c=>{
+        if(!isWild(c,lv))return c;
+        const ri=wilds.indexOf(c);
+        return {id:c.id,real:c,suit:c.suit,rank:combo[Math.min(ri,combo.length-1)]};
+      });
+      let ok=true;const rg=[];
+      for(const g of groupHand(virt,lv)){
+        const rc=g.cards.map(x=>x.real||x);   // 映射回真实手牌
+        const p=identify(rc,lv);
+        if(!p){ok=false;break}
+        rg.push({cards:rc,play:p});
+      }
+      if(!ok)continue;
+      const sc=scoreGroups(rg);
+      if(!best||sc>best.score)best={groups:rg,score:sc};
+    }
+  }
+  if(!best){const g=groupHand(cards,lv);best={groups:g,score:scoreGroups(g)}}
+  _planCache.set(key,best);
+  return best;
+}
 /* 生成所有能压 prev 的出牌候选(prev=null时为空,由groups负责首攻) */
 function genBeats(cards,prev,lv){
   const out=[],seen=new Set();
@@ -591,16 +694,18 @@ function genBeats(cards,prev,lv){
       else if(byRank[r].length===1&&wilds.length)push([byRank[r][0],wilds[0]]);
     }
     for(const jr of[15,16]){const js=jokers.filter(j=>j.rank===jr);if(js.length>=2)push(js.slice(0,2))}
+    if(wilds.length>=2)push(wilds.slice(0,2));                    // 双配成对(按一对级牌计)
   }
   else if(t===T.TRIPLE){
     for(const r of ranks){
       if(byRank[r].length>=3)push(byRank[r].slice(0,3));
       else if(byRank[r].length===2&&wilds.length)push([...byRank[r].slice(0,2),wilds[0]]);
+      else if(byRank[r].length===1&&wilds.length>=2)push([byRank[r][0],wilds[0],wilds[1]]);
     }
   }
   else if(t===T.FULLHOUSE){
     for(const rt of ranks){
-      const need3=byRank[rt].length>=3?0:(byRank[rt].length===2?1:99);
+      const need3=byRank[rt].length>=3?0:(byRank[rt].length===2?1:(wilds.length>=2?2:99));
       if(need3>wilds.length)continue;
       for(const rp of ranks){
         if(rp===rt)continue;
@@ -653,11 +758,16 @@ function genBeats(cards,prev,lv){
     if(cnt>=4){
       push(byRank[r].slice(0,4));                 // 最小4炸
       if(cnt>4)push(byRank[r].slice(0,cnt));      // 天然大炸
-      if(wilds.length)push([...byRank[r],wilds[0]]); // 配升一级炸
-    }else if(cnt===3&&wilds.length)push([...byRank[r],wilds[0]]);
-    else if(cnt===2&&wilds.length>=2)push([...byRank[r],...wilds.slice(0,2)]);
+      if(wilds.length)push([...byRank[r],wilds[0]]);              // 配升一级炸
+      if(wilds.length>=2)push([...byRank[r],...wilds.slice(0,2)]); // 双配补大炸
+    }else if(cnt===3){
+      if(wilds.length)push([...byRank[r],wilds[0]]);
+      if(wilds.length>=2)push([...byRank[r],...wilds.slice(0,2)]);
+    }else if(cnt===2&&wilds.length>=2)push([...byRank[r],...wilds.slice(0,2)]);
   }
-  const fs=findFlushIn(cards,lv);if(fs)push(fs.cards);
+  // 同花顺候选(不同配用量/不同主值全部列入,交由评估层择优,避免白白耗配)
+  const flushAll=findFlushAll(cards,lv).sort((a,b)=>a.wildUse-b.wildUse||b.play.main-a.play.main);
+  for(const f of flushAll.slice(0,6))push(f.cards);
   if(jokers.length===4)push(jokers);
   return out;
 }
@@ -710,7 +820,7 @@ async function runMatch(){
 async function startRound(first){
   G.finished=[];G.trick=null;G.passCount=0;
   G.playedCards=[];G.passInfo=[[],[],[],[]];G.selected.clear();G.hintIdx=0;G.manualGroups=[];
-  _idCache.clear();_hcCache.clear();G.tributeResolve=null;
+  _idCache.clear();_hcCache.clear();_planCache.clear();_rankPopped.clear();G.tributeResolve=null;
   setCenterInfo("");
   const deck=shuffle(makeDeck());
   G.hands=[[],[],[],[]];
@@ -787,7 +897,10 @@ function checkRoundEnd(){
 }
 /* ===================== 进贡/还贡 ===================== */
 function chooseTributeCard(hand,lv){
-  return [...hand].sort((a,b)=>sortVal(b,lv)-sortVal(a,lv))[0];
+  // 规则:进贡手中最大的牌,但红桃级牌(逢人配)不得进贡
+  const cands=hand.filter(c=>!isWild(c,lv));
+  const pool=cands.length?cands:hand;
+  return [...pool].sort((a,b)=>sortVal(b,lv)-sortVal(a,lv))[0];
 }
 function chooseReturnCard(hand,lv){
   const cands=hand.filter(c=>!isJoker(c)&&c.rank<=10&&c.rank!==lv);
@@ -799,7 +912,7 @@ function chooseReturnCard(hand,lv){
 }
 /* 还贡合法性:非王、≤10、非级牌 */
 const isReturnLegal=(c,lv)=>!isJoker(c)&&c.rank<=10&&c.rank!==lv;
-/* 还贡牌选取:AI自动;玩家手牌自选手选 */
+/* 还贡牌选取:AI自动;玩家手牌自选(点选后确认) */
 async function pickReturnCard(winner){
   const lv=G.level;
   if(winner!==0)return chooseReturnCard(G.hands[winner],lv);
@@ -808,18 +921,39 @@ async function pickReturnCard(winner){
     await sleep(1400);
     return null;
   }
-  banner("请选择一张牌还贡(≤10,非王/级牌)");
+  banner("请点击选中一张要还贡的牌(≤10,非王/级牌),再点「确认还贡」");
   lockApp(false);updateButtons(false);
+  G.selected.clear();setTributeUI(true);
   const card=await new Promise(res=>{G.tributeResolve=res;renderHand()});
-  G.tributeResolve=null;renderHand();
+  G.tributeResolve=null;G.selected.clear();
+  setTributeUI(false);renderHand();
   return card;
+}
+/* 还贡模式UI:隐藏常规出牌按钮,只留「确认还贡」(未选中时置灰) */
+function setTributeUI(on){
+  $("#btn-return").style.display=on?"":"none";
+  $("#btn-return").disabled=true;
+  for(const s of["#btn-pass","#btn-group","#btn-play"])$(s).style.display=on?"none":"";
 }
 function tryTributePick(id){
   const c=G.hands[0].find(x=>x.id===id);
   if(!c)return;
+  if(!isReturnLegal(c,G.level)){banner("还贡牌须≤10且非王/级牌,这张不能选");return}
+  // 单击选中/取消(单选):点选另一张即换选,再点同一张取消
+  if(G.selected.has(id))G.selected.delete(id);
+  else{G.selected.clear();G.selected.add(id)}
+  renderHand();
+  $("#btn-return").disabled=G.selected.size===0;
+}
+function confirmTributeReturn(){
+  if(!G.tributeResolve)return;
+  const sel=G.hands[0].filter(c=>G.selected.has(c.id));
+  if(sel.length!==1){banner("请先点击选中一张要还贡的牌");return}
+  const c=sel[0];
   if(!isReturnLegal(c,G.level)){banner("还贡牌须≤10且非王/级牌");return}
   const r=G.tributeResolve;G.tributeResolve=null;
-  renderHand();r(c);
+  G.selected.clear();renderHand();
+  r(c);
 }
 function setCenterInfo(t){$("#center-info").textContent=t||""}
 async function tributePhase(){
@@ -882,14 +1016,15 @@ async function tributeDouble(l1,w1,l2,w2){
   return [{give:c1,back:b1},{give:c2,back:b2}];
 }
 /* ===================== AI ===================== */
-function ctrlVal(c,lv){return c.rank===16?3:c.rank===15?2:(c.rank===lv||isWild(c,lv))?1.5:0}
+function ctrlVal(c,lv){return c.rank===16?3:c.rank===15?2:isWild(c,lv)?2:(c.rank===lv?1.5:0)}
 function evaluateHand(cards,lv){
-  const groups=groupHand(cards,lv);
+  const plan=planHand(cards,lv);   // 逢人配方案规划:按替身归属穷举取最优分组
+  const groups=plan.groups;
   const hands=groups.length;
   let control=0;for(const c of cards)control+=ctrlVal(c,lv);
   const bombs=groups.filter(g=>g.play&&isBombType(g.play.type));
   const bombVal=bombs.reduce((s,g)=>s+bombWeight(g.play),0);
-  const score=control+bombVal*2-hands*1.2;
+  const score=control+plan.score;
   const strength=(hands<=10&&score>=5)?"strong":(hands>=15||score<-2?"weak":"mid");
   return {groups,hands,control,bombs,bombVal,score,strength};
 }
@@ -898,7 +1033,7 @@ const _hcCache=new Map();
 function handCountOf(cards,lv){
   const key=lv+"|"+cards.map(c=>c.id).sort((a,b)=>a-b).join(",");
   let v=_hcCache.get(key);
-  if(v===undefined){v=groupHand(cards,lv).length;_hcCache.set(key,v)}
+  if(v===undefined){v=planHand(cards,lv,"fast").groups.length;_hcCache.set(key,v)}
   return v;
 }
 function phaseOf(){const n=G.playedCards.length;return n<27?0:n<60?1:2}
@@ -927,7 +1062,11 @@ function aiLead(ai){
   const all=identify(hand,lv);
   if(all)return {cards:[...hand],play:all};
   const groups=ev.groups.filter(g=>g.play&&!isBombType(g.play.type));
-  if(!groups.length)return ev.groups[0];
+  if(!groups.length){
+    // 手上全是炸弹:领出最小炸弹,别一上来就甩王炸/最大炸
+    const bs=ev.groups.filter(g=>g.play&&isBombType(g.play.type)).sort((a,b)=>playScore(a.play,lv)-playScore(b.play,lv));
+    return bs[0]||ev.groups[0];
+  }
   const asc=(a,b)=>playScore(a.play,lv)-playScore(b.play,lv);
   const desc=(a,b)=>playScore(b.play,lv)-playScore(a.play,lv);
   // 残局冲刺:手数≤3且进入残局,从最大牌型倒序连出施压
@@ -982,38 +1121,74 @@ function aiFollow(ai,prev){
   const sortAsc=(a,b)=>playScore(a.play,lv)-playScore(b.play,lv);
   const oneOut=beats.find(b=>b.cards.length===hand.length);
   const phase=phaseOf();
-  // 通用gain/cost评估:gain=手数减少+大牌加成; cost=控制力损失*K + 炸弹代价
-  const evalBeat=(b,K,bombBase)=>{
+  // 通用gain/cost评估:gain=手数减少+大牌加成; cost=控制力损失*K + 炸弹代价 + 拆组合代价
+  // situW(形势系数):越高表示"这一手越输不起",拆组合与大牌使用的代价越该减免
+  const evalBeat=(b,K,bombBase,situW)=>{
     const rest=hand.filter(c=>!b.cards.includes(c));
     const hands2=handCountOf(rest,lv);
     const gain=ev.hands-hands2+(b.play.main>=13?0.5:0);
-    const ctrlLoss=b.cards.reduce((s,c)=>s+ctrlVal(c,lv),0);
+    let ctrlLoss=b.cards.reduce((s,c)=>s+ctrlVal(c,lv),0);
     const bombCost=isBombType(b.play.type)?bombBase:0;
-    return gain*2-ctrlLoss*K-bombCost;
+    // 拆组合代价:以非炸牌型部分拆散已成型组合(炸弹/对子/三张/顺子等)时,按组合价值计费
+    let breakCost=0,hiPair=false;
+    if(!isBombType(b.play.type)){
+      for(const g of ev.groups){
+        if(!g.play)continue;
+        const used=g.cards.filter(c=>b.cards.includes(c)).length;
+        if(used===0||used===g.cards.length)continue;
+        const t=g.play.type;
+        if(t===T.BOMB||t===T.FLUSH||t===T.JOKERBOMB){breakCost+=bombWeight(g.play)*0.6;continue}
+        if(t===T.PAIR){
+          const r=g.cards[0].rank,hi=(r===16||r===15||r===lv||isWild(g.cards[0],lv));
+          if(hi)hiPair=true;
+          breakCost+=hi?(r===16?2.0:r===15?1.4:0.9):(r===14?0.35:0.25);
+          continue;
+        }
+        if(t===T.TRIPLE)breakCost+=0.45;
+        else if(t===T.STRAIGHT||t===T.PAIRS3||t===T.PLATE)breakCost+=0.9;
+        else breakCost+=0.35;
+      }
+      if(hiPair&&situW>=0.5){
+        // 关键形势:拆王对/级牌对/配对子抢手——另一张仍是同型顶控,果断放行
+        ctrlLoss*=0.55;breakCost*=0.35;
+      }else breakCost*=(1-0.7*situW);
+    }
+    return gain*2-ctrlLoss*K-bombCost-breakCost;
   };
   if(mate){
+    // 自己能一手走完:直接走(头游优先)
+    if(oneOut)return oneOut;
     // 队友剩牌≤3可能一手走完:绝不压,放行
     if(G.hands[tp].length<=3)return null;
-    // 自己能一手走完:压(头游优先)
-    if(oneOut)return oneOut;
     // 队友出小牌(main≤J)被压风险高:按K=1.5评估接力接权(绝不用炸压队友)
     if(prev.main>11)return null;
     let best=null,bestVal=1.0;
     for(const b of beats){
       if(isBombType(b.play.type))continue;
-      const val=evalBeat(b,1.5,0);
+      const val=evalBeat(b,1.5,0,0);
       if(val>bestVal){bestVal=val;best=b}
     }
     return best;
   }
   const oppLeft=G.hands[tp].length;
+  /* 形势系数situ(0~1):对手越接近走完、越到残局、自己越接近走完,越值得花大牌、拆组合赢下这一手 */
+  let situ=0;
+  if(oppLeft<=3)situ=1;else if(oppLeft<=6)situ=0.85;else if(oppLeft<=10)situ=0.65;else if(oppLeft<=13)situ=0.55;
+  if(phase===2)situ=Math.max(situ,0.55);
+  if(ev.hands<=4)situ=Math.max(situ,0.5);
+  if(ev.hands<=2)situ=Math.max(situ,0.7);
+  // 自己能一手走完:直接出完(头游优先,优于拦阻)
+  if(oneOut)return oneOut;
   // 对手剩≤3且可能一手走完:必拦(含用炸)
   if(oppLeft<=3){
     const nonBomb=beats.filter(b=>!isBombType(b.play.type)).sort(sortAsc);
-    if(nonBomb.length)return nonBomb[0];
+    if(nonBomb.length){
+      // 对手仅剩1张且当前是单张:在其可能压过的范围内尽量出大,降低被反压后走人的风险
+      if(oppLeft===1&&nonBomb[0].play.type===T.SINGLE)return nonBomb[nonBomb.length-1];
+      return nonBomb[0];
+    }
     return [...beats].sort(sortAsc)[0];
   }
-  if(oneOut)return oneOut;
   // 只能用炸压的顶格牌(main≥50:级牌/王)或对手剩牌威胁大(≤8且≠4):必炸最小炸拦截
   const nonBombBeats=beats.filter(b=>!isBombType(b.play.type));
   if(!nonBombBeats.length){
@@ -1023,8 +1198,9 @@ function aiFollow(ai,prev){
       if(bs.length)return bs[0];
     }
   }
-  // 拦击模式:对手剩牌越少,用炸代价评估越低,积极轰炸
-  const K=[1.0,0.8,0.5][phase];
+  // 拦击模式:形势越紧(situ越高),用大牌/拆组合的代价越低、赢下此手的加权越高,积极拦截
+  const K=[1.0,0.8,0.5][phase]*(1-0.5*situ);
+  const trickWorth=2.2*situ;      // 赢下当前这一手的形势加权
   const maxBombW=ev.bombs.length?Math.max(...ev.bombs.map(g=>bombWeight(g.play))):0;
   const threat=bombThreat(ai); // 场上剩余炸弹威胁
   let best=null,bestVal=0.3;
@@ -1040,7 +1216,9 @@ function aiFollow(ai,prev){
       const keepBig=!(oppLeft<=6||ev.hands<=3||ev.bombs.length>=2||phase===2);
       if(keepBig&&bombWeight(b.play)>=maxBombW)bombBase+=4;
     }
-    const val=evalBeat(b,K,bombBase);
+    let val=evalBeat(b,K,bombBase,situ)+trickWorth;
+    // 王压王(单张):顶格单张之争优先用王拦截,不浪费炸弹(仅在局势需要时)
+    if(situ>0&&prev.type===T.SINGLE&&prev.main>=100&&b.play.type===T.SINGLE&&b.play.main>=100)val+=0.35;
     if(val>bestVal){bestVal=val;best=b}
   }
   return best;
@@ -1072,7 +1250,8 @@ function setSel(id,on){
   if(el)el.classList.toggle("sel",on);
 }
 function clearSel(){G.selected.clear();document.querySelectorAll("#hand .card.sel").forEach(e=>e.classList.remove("sel"))}
-/* 鼠标拖动框选：仅选中鼠标实际碰到的牌(按各牌矩形命中,取最上层一张);位移<6px视为单击toggle */
+/* 鼠标拖动划牌:仅作用于鼠标实际碰到的牌(按各牌矩形命中,取最上层一张)。
+   按住左键划过:从"未选中牌"起手=连续选中,从"已选中牌"起手=连续取消选中;位移<6px视为单击toggle */
 function bindHandDrag(){
   const hv=$("#hand");
   let drag=null;
@@ -1086,12 +1265,16 @@ function bindHandDrag(){
       const r=el.getBoundingClientRect();
       cards.push({id:+el.dataset.cid,left:r.left,right:r.right,top:r.top,bottom:r.bottom,z:+el.style.zIndex||0});
     });
-    drag={x0:e.clientX,y0:e.clientY,moved:false,startId:+card.dataset.cid,cards};
+    const startId=+card.dataset.cid;
+    drag={x0:e.clientX,y0:e.clientY,moved:false,startId,paintOn:!G.selected.has(startId),cards};
   });
   window.addEventListener("mousemove",e=>{
     if(!drag)return;
     if(G.tributeResolve)return; // 还贡选牌模式下禁用拖选
-    if(!drag.moved&&Math.abs(e.clientX-drag.x0)+Math.abs(e.clientY-drag.y0)>6)drag.moved=true;
+    if(!drag.moved&&Math.abs(e.clientX-drag.x0)+Math.abs(e.clientY-drag.y0)>6){
+      drag.moved=true;
+      setSel(drag.startId,drag.paintOn); // 起手牌同步为本次笔刷状态
+    }
     if(!drag.moved)return;
     let hit=null;
     for(const c of drag.cards){
@@ -1099,7 +1282,7 @@ function bindHandDrag(){
         if(!hit||c.z>hit.z)hit=c;
       }
     }
-    if(hit)setSel(hit.id,true);
+    if(hit)setSel(hit.id,drag.paintOn);
   });
   window.addEventListener("mouseup",()=>{
     if(!drag)return;
@@ -1378,6 +1561,7 @@ function openHandHtml(p){
   }
   return h+'</div>';
 }
+const _rankPopped=new Set(); // 已弹过名次徽标的玩家(每人只弹一次,startRound 清空)
 function renderPinfo(){
   const spectate=G.finished.includes(0); // 玩家已出完:观战明牌
   for(let p=0;p<4;p++){
@@ -1387,10 +1571,16 @@ function renderPinfo(){
     const backs=(spectate&&p!==0)
       ?openHandHtml(p)
       :(p!==0?`<div class="aibacks">${"<i></i>".repeat(Math.min(G.hands[p].length,12))}</div>`:"");
-    el.innerHTML=`<div class="avatar">${(G.names[p]||"牌")[0]}${fin>=0?`<div class="rank-tag">${RANK_NAMES[fin]}</div>`:""}</div>
+    const fresh=fin>=0&&!_rankPopped.has(p);
+    if(fin>=0)_rankPopped.add(p);
+    const badge=fin>=0?`<div class="rank-tag r${fin+1}${fresh?" new":""}">${RANK_NAMES[fin]}</div>`:"";
+    el.innerHTML=`<div class="avatar-wrap"><div class="avatar">${(G.names[p]||"牌")[0]}</div>${badge}</div>
       <div><div class="nm">${G.names[p]}${who}</div><div class="cnt${G.hands[p].length<=10?" warn":""}">${G.hands[p].length} 张</div></div>
       ${backs}`;
     el.classList.toggle("out",fin>=0);
+    el.classList.toggle("rank1",fin===0);
+    el.classList.toggle("rank2",fin===1);
+    el.classList.toggle("rank3",fin===2);
   }
 }
 function renderAll(){renderHand();renderPinfo()}
@@ -1423,6 +1613,13 @@ function updateCounter(){
   cell("小王",2-p15-m15,"jB");
   const p16=G.playedCards.filter(c=>c.rank===16).length,m16=G.hands[0].filter(c=>c.rank===16).length;
   cell("大王",2-p16-m16,"jR");
+}
+/* 记牌器缩放:transform不改变布局,放大时同步补偿按钮行的上边距,避免记牌器压住按钮 */
+function applyCounterScale(){
+  const box=$("#counter");
+  box.style.transform="scale("+G.counterScale+")";
+  const h=box.offsetHeight;
+  $("#ctr-ctl").style.marginTop=(5+h*(G.counterScale-1)).toFixed(1)+"px"; // 5px为原始间距
 }
 function clearSlots(){
   for(let p=0;p<4;p++){const s=$("#slot"+p);s.innerHTML="";s.classList.remove("hot")}
@@ -1547,12 +1744,14 @@ function initSettings(){
   $("#ctr-toggle").onclick=()=>{
     G.counterOn=!G.counterOn;
     $("#counter").style.display=G.counterOn?"flex":"none";
+    applyCounterScale();
   };
   const scales=[0.7,1,1.3];let scIdx=1;
   $("#ctr-scale").onclick=()=>{
     scIdx=(scIdx+1)%3;G.counterScale=scales[scIdx];
-    $("#counter").style.transform="scale("+G.counterScale+")";
+    applyCounterScale();
   };
+  $("#btn-return").onclick=confirmTributeReturn;
 }
 window.addEventListener("DOMContentLoaded",initSettings);
 /* ===================== 动画 ===================== */
@@ -1828,10 +2027,23 @@ function selfTest(){
   ok("级牌单张>A",canBeat(lvP,aP));
   const hand1=[C("S",3),C("H",9),C("J",15),C("S",14)];
   ok("进贡选最大(王>级牌)",chooseTributeCard(hand1,9).rank===15);
-  const hand2=[C("S",3),C("H",9),C("S",14),C("D",14)];
-  ok("进贡级牌>A",chooseTributeCard(hand2,9).rank===9);
+  const hand2=[C("S",3),C("S",9),C("S",14),C("D",14)];
+  ok("进贡级牌>A(非逢人配级牌)",chooseTributeCard(hand2,9).rank===9);
   const rc=chooseReturnCard([C("S",3),C("S",3),C("H",7),C("S",12),C("H",9)],9);
   ok("还贡给孤张≤10非级牌",rc&&rc.rank===7);
+  // 逢人配专项
+  p=identify([C("S",3),C("H",3),C("H",3)],3);
+  ok("双配补三张(3+配配=级牌三张)",p&&p.type===T.TRIPLE&&p.main===50);
+  p=identify([C("S",7),C("C",7),C("D",7),C("H",7),C("H",7)],7);
+  ok("三张+双配成5张炸",p&&p.type===T.BOMB&&p.len===5);
+  const trib=chooseTributeCard([C("S",5),C("H",9),C("S",14)],9);
+  ok("进贡不贡逢人配",!isWild(trib,9)&&trib.rank===14);
+  const gbT=genBeats([C("S",13),C("H",6),C("H",6)],identify([C("S",9),C("C",9),C("D",9)],6),6);
+  ok("双配补三张可压牌",gbT.some(b=>b.play.type===T.TRIPLE&&b.play.main===13));
+  const gbP=genBeats([C("H",6),C("H",6)],identify([C("S",14),C("C",14)],6),6);
+  ok("双配成对可压对A",gbP.some(b=>b.play.type===T.PAIR&&b.play.main===50));
+  const plan1=planHand([C("S",14),C("S",2),C("C",4),C("D",5),C("H",7),C("C",9),C("D",9)],7);
+  ok("配补A2345顺子(手数=2)",plan1.groups.length===2);
   const fails=R.filter(r=>!r[1]);
   console.log("[掼蛋自检] "+(fails.length?"FAIL":"PASS")+" ("+(R.length-fails.length)+"/"+R.length+")");
   R.forEach(r=>console.log((r[1]?"  PASS ":"  FAIL ")+r[0]));
